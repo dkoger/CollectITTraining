@@ -1,0 +1,201 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<record_update table="sys_ui_script">
+    <sys_ui_script action="INSERT_OR_UPDATE">
+        <active>true</active>
+        <description>Client-side logic for CollectIt App</description>
+        <global>false</global>
+        <name>x_snc_collectit.collectIt_client_logic</name>
+        <script><![CDATA[var app = angular.module('collectit',['ArrayService','sn.uiMacro']);
+
+
+app.controller('CollectIt',function($scope,$http,arrayservice,$timeout){
+	
+	$scope.collectits = [];
+	$scope.collectitsIndex='';
+	
+	$scope.file = "";
+	$scope.success = false;
+	$scope.recNumber = '';
+	$scope.recSysID = '';
+	$scope.recImage = '';
+	
+	$scope.showProgressBar=false;
+	$scope.showRefresh=true;
+	$scope.showBrowse=true;
+	
+	load();
+	
+	function load(){
+		$http.get('/api/now/table/x_snc_collectit_collectit?sysparm_query=u_in_collection%3Dtrue%5EORDERBYnumber&sysparm_display_value=true&sysparm_fields=number%2Cshort_description%2Cimage%2Csys_id%2Cdescription%2Cu_date_acquired')
+		.then(function(response){
+			for(var i = 0 ; i < response.data.result.length ; i++){
+				var retObj = {};
+				retObj.number = response.data.result[i].number;
+				retObj.short_description = response.data.result[i].short_description;
+				retObj.description = response.data.result[i].description;
+				retObj.image = response.data.result[i].image;
+				retObj.sys_id = response.data.result[i].sys_id;
+				retObj.date_acquired = response.data.result[i].u_date_acquired;
+				$scope.collectits.push(retObj);
+				
+			}
+			
+		},
+		function(response){
+			alert("Something did not work right.  The records did not load.");
+		});
+	}
+	
+	$scope.deleteRecord = function(getSysID,getNumber){
+		var doit = confirm("Are you sure you want to permanently delete record " + getNumber + "?");
+		if(doit == true){
+			var delEndpoint = "/api/now/table/x_snc_collectit_collectit/" + getSysID;
+			$http.delete(delEndpoint)
+			.then(function(response){
+				alert("Record " + getNumber +" was deleted.");
+				$scope.collectits = arrayservice.removeArrayObject($scope.collectits,getSysID);
+			},
+			function(response){
+				alert("Something didn't work right.  The record was not deleted.");
+			});
+		}
+		
+		
+	};
+	$scope.editRecord = function(getSysID){
+		$scope.oneCIItem = {};
+		$scope.collectitsIndex = arrayservice.returnIndexFromArray($scope.collectits,getSysID);
+		$scope.oneCIItem = $scope.collectits[$scope.collectitsIndex];
+		
+		$scope.recNumber = $scope.collectits[$scope.collectitsIndex].number;
+		$scope.recSysID = $scope.collectits[$scope.collectitsIndex].sys_id;
+		$scope.recImage = $scope.collectits[$scope.collectitsIndex].image;
+	};
+	
+	
+	$scope.saveChanges = function(oneCIItem){
+		
+		var data = {
+			short_description: $scope.oneCIItem.short_description,
+			description: $scope.oneCIItem.description,
+			u_date_acquired: $scope.oneCIItem.acquired,
+		};
+		
+		$scope.addDelay($timeout,3000);
+		
+		var modEndpoint = "/api/now/table/x_snc_collectit_collectit/" + $scope.oneCIItem.sys_id +"?sysparm_display_value=true";
+		$http.put(modEndpoint,data)
+		.then(function(response){
+			$scope.collectits[$scope.collectitsIndex].description = data.description;
+			$scope.collectits[$scope.collectitsIndex].short_description = data.short_description;
+			$scope.collectits[$scope.collectitsIndex].u_date_acquired = data.u_date_acquired;
+		},
+		function(response){
+			alert("Something didn't work right.  Record not saved.");
+		});
+		angular.element('#editModal').modal('hide');
+	};
+	
+	$scope.discardChanges = function(oneCIItem){
+		var modEndpoint = "/api/now/table/x_snc_collectit_collectit/" + $scope.oneCIItem.sys_id +"?sysparm_fields=number%2Cshort_description%2Cdescription%2Cu_date_acquired";
+		$http.get(modEndpoint)
+		.then(function(response){
+			$scope.oneCIItem.short_description = response.data.result.short_description;
+			$scope.oneCIItem.description = response.data.result.description;
+			$scope.oneCIItem.u_date_acquired = response.data.result.u_date_acquired;
+			
+		},
+		function(response){
+			alert("Something didn't work right.  The record didn't load");
+		});
+		
+		angular.element('#editModal').modal('hide');
+	};
+	
+	
+	
+	$scope.setFile = function(input) {
+		$scope.file = input.files[0];
+		/*		console.log("name : " + $scope.file.name);
+		console.log("size : " + $scope.file.size);
+		console.log("type : " + $scope.file.type);
+		console.log("date : " + $scope.file.lastModified);
+		console.log("recImageID = " + $scope.recImage);
+ 		*/
+		$scope.uploadBinary($scope.file, {type: 'image/jpeg'});
+		
+	};
+	
+	$scope.uploadBinary = function(blobOrFile){
+		$scope.deleteExistingAttachment($scope.recImageID);
+		
+		var xhr = new XMLHttpRequest();
+		
+		xhr.open('POST', '/api/now/attachment/file?table_name=x_snc_collectit_collectit&table_sys_id=' + $scope.recSysID +'&file_name=image', true);
+		xhr.send(blobOrFile);
+	};
+	
+	$scope.deleteExistingAttachment = function() {
+		
+		var xhr = new XMLHttpRequest();
+		$scope.recImage = $scope.recImage.replace(".iix","");
+		xhr.open('DELETE', '/api/now/attachment/' + $scope.recImage, true);
+		xhr.send(null);
+		$scope.$apply(function(){
+			$scope.showRefresh=false;
+			$scope.showBrowse=false;
+		});
+	};
+	
+	
+	$scope.refreshImage = function(){
+		$scope.showRefresh=true;
+		$scope.addDelay($timeout,6000);
+		$http.get('/api/now/table/x_snc_collectit_collectit/' + $scope.recSysID +'?sysparm_display_value=true&sysparm_fields=image')
+		.then(function(response){
+			$scope.collectits[$scope.collectitsIndex].image = response.data.result.image;
+		},
+		function(response){
+			alert("Unable to refresh table image.");
+		});
+		$scope.file="";
+	};
+	
+	
+	$scope.addDelay = function($timeout,duration){
+		$scope.showProgressBar = true;
+		$timeout(function(){
+			$scope.showProgressBar = false;
+			angular.element('#changeImage').modal('hide');
+			$scope.showBrowse=true;
+		},duration);
+	};
+
+	
+	
+});
+
+app.directive('ciTable',function(uiMacroTemplate){
+		return{
+			restrict: 'E',
+			templateUrl: uiMacroTemplate('x_snc_collectit_ciTable')
+		};
+	});]]></script>
+        <script_name>collectIt_client_logic</script_name>
+        <sys_class_name>sys_ui_script</sys_class_name>
+        <sys_created_by>admin</sys_created_by>
+        <sys_created_on>2016-05-15 20:21:48</sys_created_on>
+        <sys_customer_update>true</sys_customer_update>
+        <sys_id>044cc797095312007f44961fb4a2cee4</sys_id>
+        <sys_mod_count>11</sys_mod_count>
+        <sys_name>x_snc_collectit.collectIt_client_logic</sys_name>
+        <sys_package display_value="CollectIt" source="x_snc_collectit">0322b217095312007f44961fb4a2ce82</sys_package>
+        <sys_policy/>
+        <sys_replace_on_upgrade>false</sys_replace_on_upgrade>
+        <sys_scope display_value="CollectIt">0322b217095312007f44961fb4a2ce82</sys_scope>
+        <sys_update_name>sys_ui_script_044cc797095312007f44961fb4a2cee4</sys_update_name>
+        <sys_updated_by>admin</sys_updated_by>
+        <sys_updated_on>2016-05-16 00:04:23</sys_updated_on>
+        <use_scoped_format>false</use_scoped_format>
+    </sys_ui_script>
+</record_update>
